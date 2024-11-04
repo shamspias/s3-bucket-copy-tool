@@ -64,22 +64,20 @@ def load_config():
 
 def get_s3_client(config_section):
     """Initialize and return an S3 client using the provided configuration section."""
-    verify_value = False  # Or path to your certificate
-    logging.info(f"SSL verification set to: {verify_value}")
-
+    # Option 1: Using Config with verify=False
     s3_config = Config(
-        region_name=config_section['aws_region'],
-        retries={'max_attempts': 10, 'mode': 'standard'},
-        s3={'addressing_style': 'auto'},
         signature_version='s3v4',
-        proxies=None,
-        verify=verify_value  # Disable SSL verification
+        retries={'max_attempts': 10, 'mode': 'standard'},
+        verify=False  # Disable SSL verification
     )
+
+    logging.info(f"Creating S3 client for endpoint {config_section.get('endpoint_url')} with SSL verify set to False")
 
     return boto3.client(
         's3',
         aws_access_key_id=config_section['aws_access_key_id'],
         aws_secret_access_key=config_section['aws_secret_access_key'],
+        region_name=config_section['aws_region'],
         endpoint_url=config_section.get('endpoint_url'),
         config=s3_config
     )

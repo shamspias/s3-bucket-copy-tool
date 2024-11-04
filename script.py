@@ -5,6 +5,10 @@ import boto3
 from botocore.exceptions import ClientError
 from botocore.config import Config
 from dotenv import load_dotenv
+from tqdm import tqdm
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def setup_logging():
@@ -90,26 +94,34 @@ def copy_objects(source_s3_client, destination_s3_client, config):
     paginator = source_s3_client.get_paginator('list_objects_v2')
     try:
         for page in paginator.paginate(Bucket=source_bucket):
-            for obj in page.get('Contents', []):
+            objects = page.get('Contents', [])
+            for obj in objects:
                 source_key = obj['Key']
                 destination_key = os.path.join(destination_prefix, source_key)
-                logging.info(f"Copying {source_key} to {destination_key}")
+                file_size = obj['Size']
+                logging.info(f"Copying {source_key} to {destination_key} ({file_size} bytes)")
 
-                # Download the object from the source bucket
+                # Progress callback function
+                def progress_callback(bytes_transferred):
+                    progress_bar.update(bytes_transferred - progress_bar.n)
+
                 try:
-                    response = source_s3_client.get_object(Bucket=source_bucket, Key=source_key)
-                    data = response['Body'].read()
-                except ClientError as e:
-                    logging.error(f"Failed to download {source_key} from source bucket: {e}")
-                    continue  # Skip to the next object
+                    # Initialize progress bar
+                    with tqdm(total=file_size, unit='B', unit_scale=True, desc=source_key, leave=True) as progress_bar:
+                        # Download the object from the source bucket
+                        response = source_s3_client.get_object(Bucket=source_bucket, Key=source_key)
+                        streaming_body = response['Body']
 
-                # Upload the object to the destination bucket
-                try:
-                    destination_s3_client.put_object(Bucket=destination_bucket, Key=destination_key, Body=data)
+                        # Upload the streaming body to the destination bucket with progress callback
+                        destination_s3_client.upload_fileobj(
+                            Fileobj=streaming_body,
+                            Bucket=destination_bucket,
+                            Key=destination_key,
+                            Callback=progress_callback
+                        )
                 except ClientError as e:
-                    logging.error(f"Failed to upload {destination_key} to destination bucket: {e}")
+                    logging.error(f"Error copying {source_key}: {e}")
                     continue  # Skip to the next object
-
     except ClientError as e:
         logging.error(f"Error copying objects: {e}")
         exit(1)

@@ -90,7 +90,8 @@ def copy_objects(source_s3_client, destination_s3_client, config):
                 destination_s3_client.copy_object(
                     CopySource=copy_source,
                     Bucket=destination_bucket,
-                    Key=destination_key
+                    Key=destination_key,
+                    verify=False
                 )
                 # Set the object's ACL to match the source (optional)
                 # destination_s3_client.put_object_acl(

@@ -109,6 +109,7 @@ def main():
     source_s3_client = get_s3_client(config['source'])
     destination_s3_client = get_s3_client(config['destination'])
     copy_objects(source_s3_client, destination_s3_client, config)
+    print("_____Complete______")
 
 
 if __name__ == '__main__':

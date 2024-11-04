@@ -2,7 +2,9 @@ import os
 import sys
 import logging
 import boto3
+import botocore.session
 from botocore.exceptions import ClientError
+from botocore.config import Config
 from dotenv import load_dotenv
 
 
@@ -62,13 +64,35 @@ def load_config():
 
 def get_s3_client(config_section):
     """Initialize and return an S3 client using the provided configuration section."""
+    # Option 1: Using Config with verify=False
+    s3_config = Config(
+        signature_version='s3v4',
+        retries={'max_attempts': 10, 'mode': 'standard'},
+        verify=False  # Disable SSL verification
+    )
+
+    logging.info(f"Creating S3 client for endpoint {config_section.get('endpoint_url')} with SSL verify set to False")
+
     return boto3.client(
         's3',
         aws_access_key_id=config_section['aws_access_key_id'],
         aws_secret_access_key=config_section['aws_secret_access_key'],
         region_name=config_section['aws_region'],
-        endpoint_url=config_section.get('endpoint_url')
+        endpoint_url=config_section.get('endpoint_url'),
+        config=s3_config
     )
+
+    # Option 2: Using a custom session
+    # session = botocore.session.get_session()
+    # session.verify = False  # Disable SSL verification
+    # return session.create_client(
+    #     's3',
+    #     aws_access_key_id=config_section['aws_access_key_id'],
+    #     aws_secret_access_key=config_section['aws_secret_access_key'],
+    #     region_name=config_section['aws_region'],
+    #     endpoint_url=config_section.get('endpoint_url'),
+    #     config=Config(signature_version='s3v4')
+    # )
 
 
 def copy_objects(source_s3_client, destination_s3_client, config):
@@ -81,24 +105,17 @@ def copy_objects(source_s3_client, destination_s3_client, config):
     try:
         for page in paginator.paginate(Bucket=source_bucket):
             for obj in page.get('Contents', []):
-                copy_source = {'Bucket': source_bucket, 'Key': obj['Key']}
+                copy_source = {
+                    'Bucket': source_bucket,
+                    'Key': obj['Key']
+                }
                 destination_key = os.path.join(destination_prefix, obj['Key'])
                 logging.info(f"Copying {obj['Key']} to {destination_key}")
-                # Fetch the object's ACL to maintain permissions (optional)
-                # acl = source_s3_client.get_object_acl(Bucket=source_bucket, Key=obj['Key'])
-                # Copy the object
                 destination_s3_client.copy_object(
                     CopySource=copy_source,
                     Bucket=destination_bucket,
-                    Key=destination_key,
-                    verify=False
+                    Key=destination_key
                 )
-                # Set the object's ACL to match the source (optional)
-                # destination_s3_client.put_object_acl(
-                #     Bucket=destination_bucket,
-                #     Key=destination_key,
-                #     AccessControlPolicy=acl
-                # )
     except ClientError as e:
         logging.error(f"Error copying objects: {e}")
         exit(1)
@@ -110,7 +127,6 @@ def main():
     source_s3_client = get_s3_client(config['source'])
     destination_s3_client = get_s3_client(config['destination'])
     copy_objects(source_s3_client, destination_s3_client, config)
-    print("_____Complete______")
 
 
 if __name__ == '__main__':
